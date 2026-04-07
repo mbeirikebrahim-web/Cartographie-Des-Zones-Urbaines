@@ -270,17 +270,28 @@ def add_ee_tile(map_obj, image, vis_params, layer_name, opacity=1.0):
     ).add_to(map_obj)
 
 
+# =========================
+# Test disponibilité GEE
+# =========================
+GEE_AVAILABLE = True
+PROJECT_ID = None
+GEE_ERROR = None
+
 try:
     PROJECT_ID = initialize_earth_engine()
 except Exception as e:
-    st.error("Erreur de connexion à Google Earth Engine")
-    st.code(str(e))
-    st.stop()
+    GEE_AVAILABLE = False
+    GEE_ERROR = str(e)
+
+if not GEE_AVAILABLE:
+    st.warning("Mode dégradé : Google Earth Engine indisponible.")
+    with st.expander("Détail technique", expanded=False):
+        st.code(GEE_ERROR)
 
 # =========================
 # Mise en page principale
 # =========================
-left_col, right_col = st.columns([1.0, 2.6], gap="large")   
+left_col, right_col = st.columns([1.0, 2.6], gap="large")
 
 with left_col:
     with st.container(border=True):
@@ -334,18 +345,25 @@ with right_col:
 # =========================
 # Zone d'étude : Rabat
 # =========================
-gaul2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
+if GEE_AVAILABLE:
+    gaul2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
 
-rabat_fc = (
-    gaul2
-    .filter(ee.Filter.eq("ADM0_NAME", "Morocco"))
-    .filter(ee.Filter.eq("ADM2_NAME", "Rabat"))
-)
+    rabat_fc = (
+        gaul2
+        .filter(ee.Filter.eq("ADM0_NAME", "Morocco"))
+        .filter(ee.Filter.eq("ADM2_NAME", "Rabat"))
+    )
 
-rabat = rabat_fc.geometry()
+    rabat = rabat_fc.geometry()
 
-boundary = ee.Image().byte().paint(rabat_fc, 1, 3)
-boundary_vis = {"palette": ["#2563eb"]}
+    boundary = ee.Image().byte().paint(rabat_fc, 1, 3)
+    boundary_vis = {"palette": ["#2563eb"]}
+else:
+    gaul2 = None
+    rabat_fc = None
+    rabat = None
+    boundary = None
+    boundary_vis = {"palette": ["#2563eb"]}
 
 # =========================
 # Dates
@@ -357,59 +375,75 @@ date_fin = f"{annee_int + 1}-01-01"
 # =========================
 # Fond Sentinel-2
 # =========================
-s2 = (
-    ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
-    .filterBounds(rabat)
-    .filterDate(date_debut, date_fin)
-    .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
-    .median()
-    .clip(rabat)
-)
+if GEE_AVAILABLE:
+    s2 = (
+        ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+        .filterBounds(rabat)
+        .filterDate(date_debut, date_fin)
+        .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
+        .median()
+        .clip(rabat)
+    )
 
-s2_vis = {
-    "min": 0,
-    "max": 3000,
-    "bands": ["B4", "B3", "B2"]
-}
+    s2_vis = {
+        "min": 0,
+        "max": 3000,
+        "bands": ["B4", "B3", "B2"]
+    }
+else:
+    s2 = None
+    s2_vis = None
 
 # =========================
 # Zones urbaines
 # =========================
-dw_built = (
-    ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
-    .filterBounds(rabat)
-    .filterDate(date_debut, date_fin)
-    .select("built")
-    .median()
-    .clip(rabat)
-)
+if GEE_AVAILABLE:
+    dw_built = (
+        ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
+        .filterBounds(rabat)
+        .filterDate(date_debut, date_fin)
+        .select("built")
+        .median()
+        .clip(rabat)
+    )
 
-urban_mask = dw_built.gt(0.72).selfMask()
-urban_mask = urban_mask.updateMask(
-    urban_mask.connectedPixelCount(100, True).gte(6)
-)
+    urban_mask = dw_built.gt(0.72).selfMask()
+    urban_mask = urban_mask.updateMask(
+        urban_mask.connectedPixelCount(100, True).gte(6)
+    )
+else:
+    dw_built = None
+    urban_mask = None
 
 # =========================
 # Surface urbaine estimée
 # =========================
-urban_area_m2 = urban_mask.multiply(ee.Image.pixelArea()).reduceRegion(
-    reducer=ee.Reducer.sum(),
-    geometry=rabat,
-    scale=10,
-    maxPixels=1e10
-).getNumber("built")
+if GEE_AVAILABLE:
+    urban_area_m2 = urban_mask.multiply(ee.Image.pixelArea()).reduceRegion(
+        reducer=ee.Reducer.sum(),
+        geometry=rabat,
+        scale=10,
+        maxPixels=1e10
+    ).getNumber("built")
 
-urban_area_ha = ee.Number(urban_area_m2).divide(10000)
-urban_area_ha_value = urban_area_ha.getInfo()
+    urban_area_ha = ee.Number(urban_area_m2).divide(10000)
+    urban_area_ha_value = urban_area_ha.getInfo()
 
-if urban_area_ha_value is None:
+    if urban_area_ha_value is None:
+        urban_area_ha_value = 0.0
+else:
     urban_area_ha_value = 0.0
+
+urban_area_display = f"{urban_area_ha_value:,.2f} ha" if GEE_AVAILABLE else "Indisponible"
 
 # =========================
 # Carte Folium
 # =========================
-centroid = rabat.centroid(1).coordinates().getInfo()
-center_lon, center_lat = centroid[0], centroid[1]
+if GEE_AVAILABLE:
+    centroid = rabat.centroid(1).coordinates().getInfo()
+    center_lon, center_lat = centroid[0], centroid[1]
+else:
+    center_lat, center_lon = 34.0209, -6.8416
 
 if fond_carte == "Satellite":
     m = folium.Map(
@@ -433,37 +467,47 @@ else:
         control_scale=True
     )
 
-try:
-    if afficher_sentinel:
-        add_ee_tile(m, s2, s2_vis, f"Sentinel-2 {annee}", opacity=1)
+if GEE_AVAILABLE:
+    try:
+        if afficher_sentinel and s2 is not None and s2_vis is not None:
+            add_ee_tile(m, s2, s2_vis, f"Sentinel-2 {annee}", opacity=1)
 
-    if afficher_urbain:
-        add_ee_tile(
-            m,
-            urban_mask,
-            {"palette": ["red"]},
-            "Zones urbaines estimées",
-            opacity=0.72
-        )
+        if afficher_urbain and urban_mask is not None:
+            add_ee_tile(
+                m,
+                urban_mask,
+                {"palette": ["red"]},
+                "Zones urbaines estimées",
+                opacity=0.72
+            )
 
-    if afficher_limite:
-        add_ee_tile(
-            m,
-            boundary,
-            boundary_vis,
-            "Limite de la zone d'étude",
-            opacity=1
-        )
-except Exception as e:
-    st.error("Erreur lors de l'affichage des couches cartographiques")
-    st.code(str(e))
-    st.stop()
+        if afficher_limite and boundary is not None:
+            add_ee_tile(
+                m,
+                boundary,
+                boundary_vis,
+                "Limite de la zone d'étude",
+                opacity=1
+            )
+    except Exception as e:
+        st.error("Erreur lors de l'affichage des couches cartographiques")
+        st.code(str(e))
 
 folium.LayerControl(collapsed=True).add_to(m)
 
 # =========================
 # Contenu principal à droite
 # =========================
+methode_image = "Sentinel-2 SR Harmonized" if GEE_AVAILABLE else "Fond de carte local uniquement"
+methode_detection = "Dynamic World V1, bande built" if GEE_AVAILABLE else "Indisponible en mode dégradé"
+methode_seuil = "0.72" if GEE_AVAILABLE else "N/A"
+methode_filtrage = "petits objets isolés supprimés" if GEE_AVAILABLE else "N/A"
+interpretation_lecture = (
+    "estimation des zones bâties détectées"
+    if GEE_AVAILABLE
+    else "mode dégradé sans calcul Earth Engine"
+)
+
 with right_col:
     top1, top2, top3 = st.columns(3)
 
@@ -494,7 +538,7 @@ with right_col:
             f"""
         <div class="top-card">
             <div class="top-label">Surface urbaine estimée</div>
-            <div class="top-value">{urban_area_ha_value:,.2f} ha</div>
+            <div class="top-value">{urban_area_display}</div>
         </div>
             """,
             unsafe_allow_html=True
@@ -508,14 +552,14 @@ with right_col:
 
     with col_right_info:
         st.markdown(
-            """
+            f"""
         <div class="custom-card">
             <div class="panel-title">Méthode</div>
             <div class="panel-line"><b>Limite :</b> FAO/GAUL/2015/level2</div>
-            <div class="panel-line"><b>Image :</b> Sentinel-2 SR Harmonized</div>
-            <div class="panel-line"><b>Détection :</b> Dynamic World V1, bande <b>built</b></div>
-            <div class="panel-line"><b>Seuil :</b> 0.72</div>
-            <div class="panel-line"><b>Filtrage :</b> petits objets isolés supprimés</div>
+            <div class="panel-line"><b>Image :</b> {methode_image}</div>
+            <div class="panel-line"><b>Détection :</b> {methode_detection}</div>
+            <div class="panel-line"><b>Seuil :</b> {methode_seuil}</div>
+            <div class="panel-line"><b>Filtrage :</b> {methode_filtrage}</div>
         </div>
             """,
             unsafe_allow_html=True
@@ -544,8 +588,8 @@ with right_col:
             <div class="panel-title">Lecture rapide</div>
             <div class="panel-line"><b>Zone :</b> {zone_etude}</div>
             <div class="panel-line"><b>Année :</b> {annee}</div>
-            <div class="panel-line"><b>Surface :</b> {urban_area_ha_value:,.2f} ha</div>
-            <div class="panel-line"><b>Interprétation :</b> estimation des zones bâties détectées</div>
+            <div class="panel-line"><b>Surface :</b> {urban_area_display}</div>
+            <div class="panel-line"><b>Interprétation :</b> {interpretation_lecture}</div>
         </div>
             """,
             unsafe_allow_html=True
