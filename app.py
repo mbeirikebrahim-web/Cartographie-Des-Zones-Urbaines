@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import tempfile
@@ -225,22 +226,43 @@ def initialize_earth_engine():
             return project_id
 
         secrets_available = True
-try:
-    _ = st.secrets
-except Exception:
-    secrets_available = False
+        try:
+            _ = st.secrets
+        except Exception:
+            secrets_available = False
 
-st.info(
-    f"DEBUG secrets_available={secrets_available}, "
-    f"EE_PROJECT_present={('EE_PROJECT' in st.secrets) if secrets_available else False}, "
-    f"GCP_SERVICE_ACCOUNT_JSON_present={('GCP_SERVICE_ACCOUNT_JSON' in st.secrets) if secrets_available else False}"
-)
+        ee_project_present = False
+        gcp_json_present = False
+        gcp_json_b64_present = False
 
-if secrets_available and "EE_PROJECT" in st.secrets and "GCP_SERVICE_ACCOUNT_JSON" in st.secrets:
-            project_id = st.secrets["EE_PROJECT"]
-            service_account_json = st.secrets["GCP_SERVICE_ACCOUNT_JSON"]
+        if secrets_available:
+            ee_project_present = "EE_PROJECT" in st.secrets
+            gcp_json_present = "GCP_SERVICE_ACCOUNT_JSON" in st.secrets
+            gcp_json_b64_present = "GCP_SERVICE_ACCOUNT_JSON_B64" in st.secrets
 
-            service_account_info = json.loads(service_account_json)
+        st.info(
+            f"DEBUG secrets_available={secrets_available}, "
+            f"EE_PROJECT_present={ee_project_present}, "
+            f"GCP_SERVICE_ACCOUNT_JSON_present={gcp_json_present}, "
+            f"GCP_SERVICE_ACCOUNT_JSON_B64_present={gcp_json_b64_present}"
+        )
+
+        if secrets_available and ee_project_present and (gcp_json_present or gcp_json_b64_present):
+            project_id = str(st.secrets["EE_PROJECT"])
+
+            if gcp_json_present:
+                raw_secret = st.secrets["GCP_SERVICE_ACCOUNT_JSON"]
+                if isinstance(raw_secret, str):
+                    service_account_json = raw_secret
+                    service_account_info = json.loads(service_account_json)
+                else:
+                    service_account_info = dict(raw_secret)
+                    service_account_json = json.dumps(service_account_info)
+            else:
+                raw_secret_b64 = str(st.secrets["GCP_SERVICE_ACCOUNT_JSON_B64"])
+                service_account_json = base64.b64decode(raw_secret_b64).decode("utf-8")
+                service_account_info = json.loads(service_account_json)
+
             service_account_email = service_account_info["client_email"]
 
             with tempfile.NamedTemporaryFile(
@@ -252,7 +274,10 @@ if secrets_available and "EE_PROJECT" in st.secrets and "GCP_SERVICE_ACCOUNT_JSO
                 tmp.write(service_account_json)
                 key_path = tmp.name
 
-            credentials = ee.ServiceAccountCredentials(service_account_email, key_path)
+            credentials = ee.ServiceAccountCredentials(
+                service_account_email,
+                key_path
+            )
             ee.Initialize(credentials=credentials, project=project_id)
             return project_id
 
