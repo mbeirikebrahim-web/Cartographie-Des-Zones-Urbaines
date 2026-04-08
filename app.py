@@ -196,6 +196,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================
+# Debug GEE
+# =========================
+DEBUG_GEE = ""
+
+# =========================
 # Connexion Earth Engine
 # =========================
 def initialize_earth_engine():
@@ -205,6 +210,8 @@ def initialize_earth_engine():
     2. Secrets Streamlit
     3. Initialisation locale classique
     """
+    global DEBUG_GEE
+
     project_id = "projet-mbeirike"
     key_path = None
 
@@ -217,6 +224,8 @@ def initialize_earth_engine():
 
             service_account_email = service_account_info["client_email"]
             project_id = service_account_info.get("project_id", project_id)
+
+            DEBUG_GEE = "DEBUG source=local_file"
 
             credentials = ee.ServiceAccountCredentials(
                 service_account_email,
@@ -240,30 +249,34 @@ def initialize_earth_engine():
             gcp_json_present = "GCP_SERVICE_ACCOUNT_JSON" in st.secrets
             gcp_json_b64_present = "GCP_SERVICE_ACCOUNT_JSON_B64" in st.secrets
 
-        st.info(
+        DEBUG_GEE = (
             f"DEBUG secrets_available={secrets_available}, "
             f"EE_PROJECT_present={ee_project_present}, "
             f"GCP_SERVICE_ACCOUNT_JSON_present={gcp_json_present}, "
             f"GCP_SERVICE_ACCOUNT_JSON_B64_present={gcp_json_b64_present}"
         )
 
-        if secrets_available and ee_project_present and (gcp_json_present or gcp_json_b64_present):
-            project_id = str(st.secrets["EE_PROJECT"])
+        if secrets_available and (gcp_json_present or gcp_json_b64_present):
+            if ee_project_present:
+                project_id = str(st.secrets["EE_PROJECT"])
 
             if gcp_json_present:
                 raw_secret = st.secrets["GCP_SERVICE_ACCOUNT_JSON"]
+
                 if isinstance(raw_secret, str):
                     service_account_json = raw_secret
                     service_account_info = json.loads(service_account_json)
                 else:
                     service_account_info = dict(raw_secret)
                     service_account_json = json.dumps(service_account_info)
+
             else:
                 raw_secret_b64 = str(st.secrets["GCP_SERVICE_ACCOUNT_JSON_B64"])
                 service_account_json = base64.b64decode(raw_secret_b64).decode("utf-8")
                 service_account_info = json.loads(service_account_json)
 
             service_account_email = service_account_info["client_email"]
+            project_id = service_account_info.get("project_id", project_id)
 
             with tempfile.NamedTemporaryFile(
                 mode="w",
@@ -314,9 +327,13 @@ except Exception as e:
     GEE_AVAILABLE = False
     GEE_ERROR = str(e)
 
+st.info(DEBUG_GEE)
+
 if not GEE_AVAILABLE:
     st.warning("Mode dégradé : Google Earth Engine indisponible.")
     with st.expander("Détail technique", expanded=False):
+        if DEBUG_GEE:
+            st.code(DEBUG_GEE)
         st.code(GEE_ERROR)
 
 # =========================
