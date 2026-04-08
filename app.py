@@ -225,12 +225,18 @@ def initialize_earth_engine():
             return project_id
 
         secrets_available = True
-        try:
-            _ = st.secrets
-        except Exception:
-            secrets_available = False
+try:
+    _ = st.secrets
+except Exception:
+    secrets_available = False
 
-        if secrets_available and "EE_PROJECT" in st.secrets and "GCP_SERVICE_ACCOUNT_JSON" in st.secrets:
+st.info(
+    f"DEBUG secrets_available={secrets_available}, "
+    f"EE_PROJECT_present={('EE_PROJECT' in st.secrets) if secrets_available else False}, "
+    f"GCP_SERVICE_ACCOUNT_JSON_present={('GCP_SERVICE_ACCOUNT_JSON' in st.secrets) if secrets_available else False}"
+)
+
+if secrets_available and "EE_PROJECT" in st.secrets and "GCP_SERVICE_ACCOUNT_JSON" in st.secrets:
             project_id = st.secrets["EE_PROJECT"]
             service_account_json = st.secrets["GCP_SERVICE_ACCOUNT_JSON"]
 
