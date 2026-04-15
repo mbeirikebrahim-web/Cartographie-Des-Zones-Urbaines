@@ -610,18 +610,7 @@ with right_col:
             unsafe_allow_html=True
         )
 
-        st.markdown(
-            f"""
-        <div class="custom-card">
-            <div class="panel-title">Lecture rapide</div>
-            <div class="panel-line"><b>Zone :</b> {zone_etude}</div>
-            <div class="panel-line"><b>Année :</b> {annee}</div>
-            <div class="panel-line"><b>Surface :</b> {urban_area_display}</div>
-            <div class="panel-line"><b>Interprétation :</b> {interpretation_lecture}</div>
-        </div>
-            """,
-            unsafe_allow_html=True
-        )
+        
 
         st.markdown(
             """
